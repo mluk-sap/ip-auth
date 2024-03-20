@@ -3,15 +3,18 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/netip"
 	"testing"
 )
 
 func TestExtAuthz(t *testing.T) {
-	server := NewExtAuthzServer()
-	// Start the test server on random port.
+	var config GbaasConfig
+	prefix, _ := netip.ParsePrefix("2.57.3.0/24")
+	block := []netip.Prefix{prefix}
+	server := NewExtAuthzServer(config, block)
+
 	go server.run("localhost:0")
 
-	// Prepare the HTTP request.
 	httpClient := &http.Client{}
 	httpReq, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:%d/check", <-server.httpPort), nil)
 	if err != nil {
@@ -19,25 +22,25 @@ func TestExtAuthz(t *testing.T) {
 	}
 
 	cases := []struct {
-		name   string
-		header string
-		want   int
+		name string
+		ip   string
+		want int
 	}{
 		{
-			name:   "HTTP-allow",
-			header: "allow",
-			want:   http.StatusOK,
+			name: "HTTP-allow",
+			ip:   "10.10.0.0",
+			want: http.StatusOK,
 		},
 		{
-			name:   "HTTP-deny",
-			header: "deny",
-			want:   http.StatusForbidden,
+			name: "HTTP-deny",
+			ip:   "2.57.3.5",
+			want: http.StatusForbidden,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var got int
-			httpReq.Header.Set(checkHeader, tc.header)
+			httpReq.Header.Set("x-envoy-external-address", tc.ip)
 			resp, err := httpClient.Do(httpReq)
 			if err != nil {
 				t.Errorf(err.Error())
