@@ -73,12 +73,3 @@ jobs:
         cache-to: type=gha,mode=max
 
 
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: |
-          cluster-ip-operator.yaml
-          config/samples/cluster-ip-nodes.yaml
-          config/samples/cluster-ip-zones.yaml
-
