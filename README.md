@@ -1,6 +1,9 @@
 
 # IP-auth
 
+> **This repository contains an early prototype, and is not meant to be used in the production use case. Feel free to try it out, leave feedback, and report issues.**
+
+
 ## Overview
 <!--- mandatory section --->
 
@@ -88,6 +91,10 @@ TO BE ADDED
 ## Development
 
 TO BE ADDED
+
+## Links
+
+More information about istio module in Kyma can be found [here](https://kyma-project.io/docs/components/istio).
 
 ## Contributing
 <!--- mandatory section - do not change this! --->
