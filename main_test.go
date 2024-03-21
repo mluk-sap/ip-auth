@@ -8,7 +8,7 @@ import (
 )
 
 func TestExtAuthz(t *testing.T) {
-	var config GbaasConfig
+	var config IpAuthConfig
 	prefix, _ := netip.ParsePrefix("2.57.3.0/24")
 	block := []netip.Prefix{prefix}
 	server := NewExtAuthzServer(config, block)

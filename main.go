@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -13,7 +12,6 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -22,38 +20,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type GbaasConfig struct {
+type IpAuthConfig struct {
 	ClientId             string `yaml:"clientId"`
 	ClientSecret         string `yaml:"clientSecret"`
 	TokenURL             string `yaml:"tokenUrl"`
-	DecisionURL          string `yaml:"decisionUrl"`
 	PolicyURL            string `yaml:"policyUrl"`
 	PolicyUpdateInterval int    `yaml:"policyUpdateInterval"`
 	Payload              string `yaml:"payload"`
 }
 
-const (
-	resultHeader   = "x-ext-authz-check-result"
-	receivedHeader = "x-ext-authz-check-received"
-	overrideHeader = "x-ext-authz-additional-header-override"
-	resultAllowed  = "allowed"
-	resultDenied   = "denied"
-)
+const denyBody = "denied by ip-auth"
 
 var (
 	httpPort   = flag.String("http", "8000", "HTTP server port")
 	configFile = flag.String("config", "", "Decision service configuration file")
 	policyFile = flag.String("policy", "", "Policy configuration file")
-
-	denyBody = "denied by ip-auth"
 )
 
-// ExtAuthzServer implements the ext_authz v2/v3 gRPC and HTTP check request API.
 type ExtAuthzServer struct {
 	httpServer *http.Server
 	// For test only
 	httpPort chan int
-	config   GbaasConfig
+	config   IpAuthConfig
 	block    []netip.Prefix
 }
 
@@ -69,6 +57,7 @@ func (s *ExtAuthzServer) isBlocked(extIp string) bool {
 	}
 	return true
 }
+
 func (s *ExtAuthzServer) refreshPolicies(interval int) {
 	if interval > 0 {
 		log.Printf("Refreshing policies every %v seconds", interval)
@@ -119,53 +108,20 @@ func (s *ExtAuthzServer) fetchPolicies() {
 
 }
 
-func getDecision(config GbaasConfig, extIp string) bool {
-
-	cfg := clientcredentials.Config{
-		ClientID:     config.ClientId,
-		ClientSecret: config.ClientSecret,
-		TokenURL:     config.TokenURL,
-	}
-	client := cfg.Client(context.Background())
-
-	body := []byte(strings.Replace(config.Payload, "IP_ADDRESS", extIp, 1))
-	response, err := client.Post(config.DecisionURL, "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		log.Fatalf("Failed to get token: %v", err)
-	}
-	var result map[string]any
-	resBody, err := io.ReadAll(response.Body)
-	defer response.Body.Close()
-	if err != nil {
-		log.Fatalf("Failed to read response body: %v", err)
-	}
-	json.Unmarshal(resBody, &result)
-
-	fmt.Printf("Response: %+v\n", string(resBody))
-	fmt.Printf("Result: %+v\n", result)
-	return (result["access_allowed"] == true)
-}
-
 // ServeHTTP implements the HTTP check request.
 func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	body, err := io.ReadAll(request.Body)
+	_, err := io.ReadAll(request.Body)
 	if err != nil {
 		log.Printf("[HTTP] read body failed: %v", err)
 	}
-	l := fmt.Sprintf("%s %s%s, headers: %v, body: [%s]\n", request.Method, request.Host, request.URL, request.Header, returnIfNotTooLong(string(body)))
+	l := fmt.Sprintf("%s %s%s, headers: %v\n", request.Method, request.Host, request.URL, request.Header)
 	extIp := request.Header.Get("x-envoy-external-address")
 	log.Printf("External IP: %s", extIp)
 	if s.isBlocked(extIp) {
 		log.Printf("[HTTP][allowed]: %s", l)
-		response.Header().Set(resultHeader, resultAllowed)
-		response.Header().Set(overrideHeader, request.Header.Get(overrideHeader))
-		response.Header().Set(receivedHeader, l)
 		response.WriteHeader(http.StatusOK)
 	} else {
 		log.Printf("[HTTP][denied]: %s", l)
-		response.Header().Set(resultHeader, resultDenied)
-		response.Header().Set(overrideHeader, request.Header.Get(overrideHeader))
-		response.Header().Set(receivedHeader, l)
 		response.WriteHeader(http.StatusForbidden)
 		_, _ = response.Write([]byte(denyBody))
 	}
@@ -202,7 +158,7 @@ func (s *ExtAuthzServer) stop() {
 	log.Printf("HTTP server stopped: %v", s.httpServer.Close())
 }
 
-func NewExtAuthzServer(config GbaasConfig, block []netip.Prefix) *ExtAuthzServer {
+func NewExtAuthzServer(config IpAuthConfig, block []netip.Prefix) *ExtAuthzServer {
 	return &ExtAuthzServer{
 		httpPort: make(chan int, 1),
 		config:   config,
@@ -234,7 +190,8 @@ func readPolicyFile(policyFile string) []netip.Prefix {
 	}
 	return block
 }
-func readConfigFile(configFile string, config *GbaasConfig) {
+
+func readConfigFile(configFile string, config *IpAuthConfig) {
 	source, err := os.ReadFile(configFile)
 	if err != nil {
 		panic(err)
@@ -249,7 +206,7 @@ func readConfigFile(configFile string, config *GbaasConfig) {
 func main() {
 	flag.Parse()
 
-	var config GbaasConfig
+	var config IpAuthConfig
 	var block []netip.Prefix
 
 	if *policyFile != "" {
@@ -272,13 +229,4 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
-}
-
-func returnIfNotTooLong(body string) string {
-	// Maximum size of a header accepted by Envoy is 60KiB, so when the request body is bigger than 60KB,
-	// we don't return it in a response header to avoid rejecting it by Envoy and returning 431 to the client
-	if len(body) > 60000 {
-		return "<too-long>"
-	}
-	return body
 }
