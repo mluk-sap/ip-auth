@@ -1,8 +1,12 @@
 
 # IP-auth
 
+
 > **This repository contains an early prototype, and is not meant to be used in the production use case. Feel free to try it out, leave feedback, and report issues.**
 
+## Status
+
+[![REUSE status](https://api.reuse.software/badge/github.com/kyma-project/ip-auth)](https://api.reuse.software/info/github.com/kyma-project/ip-auth)
 
 ## Overview
 <!--- mandatory section --->
