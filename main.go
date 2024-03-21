@@ -16,17 +16,20 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/oauth2/clientcredentials"
 	"gopkg.in/yaml.v3"
 )
 
 type GbaasConfig struct {
-	ClientId     string `yaml:"clientId"`
-	ClientSecret string `yaml:"clientSecret"`
-	TokenURL     string `yaml:"tokenUrl"`
-	DecisionURL  string `yaml:"decisionUrl"`
-	Payload      string `yaml:"payload"`
+	ClientId             string `yaml:"clientId"`
+	ClientSecret         string `yaml:"clientSecret"`
+	TokenURL             string `yaml:"tokenUrl"`
+	DecisionURL          string `yaml:"decisionUrl"`
+	PolicyURL            string `yaml:"policyUrl"`
+	PolicyUpdateInterval int    `yaml:"policyUpdateInterval"`
+	Payload              string `yaml:"payload"`
 }
 
 const (
@@ -65,6 +68,55 @@ func (s *ExtAuthzServer) isBlocked(extIp string) bool {
 		}
 	}
 	return true
+}
+func (s *ExtAuthzServer) refreshPolicies(interval int) {
+	if interval > 0 {
+		log.Printf("Refreshing policies every %v seconds", interval)
+		for range time.Tick(time.Duration(interval) * time.Second) {
+			s.fetchPolicies()
+		}
+	} else {
+		log.Printf("Policy refresh is disabled")
+	}
+
+}
+
+func (s *ExtAuthzServer) fetchPolicies() {
+	log.Printf("Fetching policies")
+	cfg := clientcredentials.Config{
+		ClientID:     s.config.ClientId,
+		ClientSecret: s.config.ClientSecret,
+		TokenURL:     s.config.TokenURL,
+	}
+	client := cfg.Client(context.Background())
+	res, err := client.Get(s.config.PolicyURL)
+	if err != nil {
+		log.Fatalf("Failed to get policies: %v", err)
+	}
+	resBody, err := io.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		log.Fatalf("Failed to read response body: %v", err)
+	}
+	policies := []map[string]string{}
+	err = json.Unmarshal(resBody, &policies)
+	if err != nil {
+		log.Fatalf("Failed to parse policies: %v", err)
+	}
+	var block []netip.Prefix
+
+	for _, policy := range policies {
+		if policy["policy"] == "BLOCK_ACCESS" {
+			p, err := netip.ParsePrefix(policy["network"])
+			if err != nil {
+				log.Fatalf("Failed to parse network: %v", err)
+			}
+			block = append(block, p)
+		}
+	}
+	s.block = block
+	log.Printf("Number of blocked network ranges: %v", len(s.block))
+
 }
 
 func getDecision(config GbaasConfig, extIp string) bool {
@@ -182,6 +234,17 @@ func readPolicyFile(policyFile string) []netip.Prefix {
 	}
 	return block
 }
+func readConfigFile(configFile string, config *GbaasConfig) {
+	source, err := os.ReadFile(configFile)
+	if err != nil {
+		panic(err)
+	}
+
+	err = yaml.Unmarshal(source, config)
+	if err != nil {
+		panic(err)
+	}
+}
 
 func main() {
 	flag.Parse()
@@ -191,22 +254,16 @@ func main() {
 
 	if *policyFile != "" {
 		block = readPolicyFile(*policyFile)
+		log.Printf("%v policies loaded from %v\n", len(block), *policyFile)
 	}
-	log.Printf("Number of blocked network ranges: %v", len(block))
 	if *configFile != "" {
-		fmt.Printf("%+v\n", *configFile)
-		source, err := os.ReadFile(*configFile)
-		if err != nil {
-			panic(err)
-		}
-		err = yaml.Unmarshal(source, &config)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Printf("Config: %+v\n", config)
+		readConfigFile(*configFile, &config)
 	}
 
 	s := NewExtAuthzServer(config, block)
+	s.fetchPolicies()
+
+	go s.refreshPolicies(config.PolicyUpdateInterval)
 
 	go s.run(fmt.Sprintf(":%s", *httpPort))
 	defer s.stop()
