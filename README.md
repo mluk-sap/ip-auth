@@ -1,43 +1,92 @@
-> **NOTE:** This is a general template that you can use for a project README.md. Except for the mandatory sections, use only those sections that suit your use case but keep the proposed section order.
->
-> Mandatory sections: 
-> - `Overview`
-> - `Prerequisites`, if there are any requirements regarding hard- or software
-> - `Installation`
-> - `Contributing` - do not change this!
-> - `Code of Conduct` - do not change this!
-> - `Licensing` - do not change this!
 
-# {Project Title}
-<!--- mandatory --->
-> Modify the title and insert the name of your project. Use Heading 1 (H1).
+# IP-auth
 
 ## Overview
 <!--- mandatory section --->
 
-> Provide a description of the project's functionality.
->
-> If it is an example README.md, describe what the example illustrates.
+IP-auth is an external authorizer for Istio Ingress Gateway. It is a simple service that checks if the request's IP address is not in a list of blocked IP ranges. If the IP address is not in the list, the service returns a 200 OK response. If the IP address is in the list, the service returns a 403 Forbidden response.
+
+![](./ip-auth.drawio.svg)
+
+The list of blocked IP ranges can be stored in a file. The service reads the file on startup. There is also possibility to fetch the list from a remote server by providing the config file with the connection details. 
+
 
 ## Prerequisites
 
-> List the requirements to run the project or example.
+- kubectl
+- kubernetes cluster with Kyma istio module installed
 
 ## Installation
 
-> Explain the steps to install your project. If there are multiple installation options, mention the recommended one and include others in a separate document. Create an ordered list for each installation task.
->
-> If it is an example README.md, describe how to build, run locally, and deploy the example. Format the example as code blocks and specify the language, highlighting where possible. Explain how you can validate that the example ran successfully. For example, define the expected output or commands to run which check a successful deployment.
->
-> Add subsections (H3) for better readability.
+Enable ip-auth in the istio module by adding the following configuration to the `istio` CR:
+
+```yaml
+spec:
+  config:
+    authorizers:
+    - name: ip-auth
+      port: 8000
+      service: ip-auth.ip-auth.svc.cluster.local
+      headers:
+        inCheck:
+          include:
+          - x-envoy-external-address
+          - x-forwarded-for      
+```
+
+You can edit the `istio` CR by running the following command:
+```bash
+kubectl edit istio -n kyma-system default
+```
+
+To install ip-auth apply [ip-auth.yaml](ip-auth.yaml) manifest in your cluster:
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kyma-project/ip-auth/main/ip-auth.yaml
+```
+It creates ip-auth namespace with deployment and service. It also creates AuthorizationPolicy that enables custom authorizer for all requests coming to istio ingress gateway.
+
+The ip-auth deployment mounts the config file from secret called config. The config you can create from the file by running the following command:
+```bash
+kubectl -n ip-auth create secret generic config --from-file=config.yaml 
+```
+The content of the config file should look like this:
+```yaml
+clientId: here-goes-your-client-id
+clientSecret: here-goes-your-client-secret
+tokenUrl: https://example.com/oauth2/token
+policyUrl: https://example.com/policy
+policyUpdateInterval: 300
+```
+
+If you want to use a static list of blocked IP ranges, you can create the config file with the list of blocked IP ranges and create the config map from it. The content of the `policy.json` file should look like this:
+```json
+[
+  {
+    "network": "1.2.3.0/24",
+    "policy": "BLOCK_ACCESS"
+  },
+  {
+    "network": "2.4.0.0/16",
+    "policy": "BLOCK_ACCESS"
+  },
+  {
+    "network": "5.6.7.128/25",
+    "policy": "BLOCK_ACCESS"
+  },
+]
+You can create the config map from the file by running the following command:
+```bash
+kubectl -n ip-auth create configmap policy --from-file=policy.json
+```
+
 
 ## Usage
 
-> Explain how to use the project. You can create multiple subsections (H3). Include the instructions or provide links to the related documentation.
+TO BE ADDED
 
 ## Development
 
-> Add instructions on how to develop the project or example. It must be clear what to do and, for example, how to trigger the tests so that other contributors know how to make their pull requests acceptable. Include the instructions or provide links to related documentation.
+TO BE ADDED
 
 ## Contributing
 <!--- mandatory section - do not change this! --->

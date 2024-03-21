@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ip-auth
+  labels:
+    istio-injection: enabled
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ip-auth
+  namespace: ip-auth
+  labels:
+    app: ip-auth
+spec:
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  selector:
+    app: ip-auth
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ip-auth
+  namespace: ip-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ip-auth
+  template:
+    metadata:
+      labels:
+        app: ip-auth
+    spec:
+      containers:
+      - image: ghcr.io/kyma-project/ip-auth:0.0.3
+        args:
+        - --policy=/projected-volume/policy.json 
+        - --config=/projected-volume/config.yaml       
+        imagePullPolicy: IfNotPresent
+        name: ip-auth
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: all-in-one
+          mountPath: "/projected-volume"
+          readOnly: true
+      volumes:
+      - name: all-in-one
+        projected:
+          sources:
+          - secret:
+              name: config
+              items:
+                - key: config.yaml
+                  path: config.yaml
+          - configMap:
+              name: policy
+              items:
+                - key: policy.json
+                  path: policy.json
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ext-authz
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+  action: CUSTOM
+  provider:
+    name: ip-auth
+  rules: 
+  - to:
+    - operation:
+        methods: ["*"]
+        
+  
