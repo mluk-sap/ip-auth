@@ -79,13 +79,13 @@ If you want to use a static list of blocked IP ranges, you can create the config
   {
     "network": "5.6.7.128/25",
     "policy": "BLOCK_ACCESS"
-  },
+  }
 ]
 ```
 
 You can create the config map from the file by running the following command:
 ```bash
-kubectl -n ip-auth create configmap policy --from-file=policy.json
+kubectl -n ip-auth create configmap policy --from-file=policy.json --dry-run=client -o yaml > policy.yaml
 ```
 
 ## Usage

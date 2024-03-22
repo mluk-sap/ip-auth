@@ -114,8 +114,8 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 	if err != nil {
 		log.Printf("[HTTP] read body failed: %v", err)
 	}
-	l := fmt.Sprintf("%s %s%s, headers: %v\n", request.Method, request.Host, request.URL, request.Header)
 	extIp := request.Header.Get("x-envoy-external-address")
+	l := fmt.Sprintf("%s %s%s, ip: %v\n", request.Method, request.Host, request.URL, extIp)
 	log.Printf("External IP: %s", extIp)
 	if s.isBlocked(extIp) {
 		log.Printf("[HTTP][allowed]: %s", l)
