@@ -46,26 +46,28 @@ You can edit the `istio` CR by running the following command:
 kubectl edit istio -n kyma-system default
 ```
 
-To install ip-auth apply [ip-auth.yaml](ip-auth.yaml) manifest in your cluster:
-```bash
-kubectl apply -f https://raw.githubusercontent.com/kyma-project/ip-auth/main/ip-auth.yaml
-```
-It creates ip-auth namespace with deployment and service. It also creates AuthorizationPolicy that enables custom authorizer for all requests coming to istio ingress gateway.
+Now create `ip-auth` namespace where the service will be deployed and create the secret with the config file. You can do it by running the following commands:
+  
+```bash 
+kubectl create namespace ip-auth
 
-The ip-auth deployment mounts the config file from secret called config. The config you can create from the file by running the following command:
-```bash
-kubectl -n ip-auth create secret generic config --from-file=config.yaml 
+kubectl -n ip-auth create secret generic config --from-file=config.yaml=sample-config.yaml
+kubectl -n ip-auth create configmap policy --from-file=policy.json
 ```
+
 The content of the config file should look like this:
 ```yaml
 clientId: here-goes-your-client-id
 clientSecret: here-goes-your-client-secret
 tokenUrl: https://example.com/oauth2/token
 policyUrl: https://example.com/policy
-policyUpdateInterval: 300
+usePolicyFile: true
+usePolicyUrl: false
+policyUpdateInterval: 600
 ```
 
 If you want to use a static list of blocked IP ranges, you can create the config file with the list of blocked IP ranges and create the config map from it. The content of the `policy.json` file should look like this:
+
 ```json
 [
   {
@@ -85,12 +87,32 @@ If you want to use a static list of blocked IP ranges, you can create the config
 
 You can create the config map from the file by running the following command:
 ```bash
-kubectl -n ip-auth create configmap policy --from-file=policy.json --dry-run=client -o yaml > policy.yaml
+kubectl -n ip-auth create configmap policy --from-file=policy.json
 ```
+
+To install ip-auth apply [ip-auth.yaml](ip-auth.yaml) manifest in your cluster:
+```bash
+kubectl apply -n ip-auth -f https://raw.githubusercontent.com/kyma-project/ip-auth/main/ip-auth.yaml
+```
+
+It also creates AuthorizationPolicy that enables custom authorizer for all requests coming to istio ingress gateway.
+
 
 ## Usage
 
-TO BE ADDED
+You can start ip-auth locally by running the following command:
+```bash
+go run main.go
+```
+
+Without config file, the service will use policy.json file from current directory. You can test the service by sending a request with the `x-envoy-external-address` header set to the IP address you want to check. For example:
+
+```bash
+curl -v -H "x-envoy-external-address: 1.2.3.0" 
+```
+
+If the IP address is in the list of blocked IP ranges, the service will return a 403 Forbidden response. If the IP address is not in the list, the service will return a 200 OK response.
+
 
 ## Development
 

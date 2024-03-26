@@ -1,0 +1,14 @@
+[
+  {
+    "network": "1.2.3.0/24",
+    "policy": "BLOCK_ACCESS"
+  },
+  {
+    "network": "2.4.0.0/16",
+    "policy": "BLOCK_ACCESS"
+  },
+  {
+    "network": "5.6.7.128/25",
+    "policy": "BLOCK_ACCESS"
+  }
+]

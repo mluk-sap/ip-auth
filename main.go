@@ -27,6 +27,8 @@ type IpAuthConfig struct {
 	PolicyURL            string `yaml:"policyUrl"`
 	PolicyUpdateInterval int    `yaml:"policyUpdateInterval"`
 	Payload              string `yaml:"payload"`
+	UsePolicyFile        bool   `yaml:"usePolicyFile"`
+	UsePolicyUrl         bool   `yaml:"usePolicyUrl"`
 }
 
 const denyBody = "denied by ip-auth"
@@ -34,7 +36,7 @@ const denyBody = "denied by ip-auth"
 var (
 	httpPort   = flag.String("http", "8000", "HTTP server port")
 	configFile = flag.String("config", "", "Decision service configuration file")
-	policyFile = flag.String("policy", "", "Policy configuration file")
+	policyFile = flag.String("policy", "policy.json", "Policy configuration file")
 )
 
 type ExtAuthzServer struct {
@@ -59,10 +61,21 @@ func (s *ExtAuthzServer) isBlocked(extIp string) bool {
 }
 
 func (s *ExtAuthzServer) refreshPolicies(interval int) {
+	if s.config.UsePolicyFile {
+		s.readPolicyFile(*policyFile)
+	}
+	if s.config.UsePolicyUrl {
+		s.fetchPolicies()
+	}
 	if interval > 0 {
 		log.Printf("Refreshing policies every %v seconds", interval)
 		for range time.Tick(time.Duration(interval) * time.Second) {
-			s.fetchPolicies()
+			if s.config.UsePolicyFile {
+				s.readPolicyFile(*policyFile)
+			}
+			if s.config.UsePolicyUrl {
+				s.fetchPolicies()
+			}
 		}
 	} else {
 		log.Printf("Policy refresh is disabled")
@@ -71,7 +84,7 @@ func (s *ExtAuthzServer) refreshPolicies(interval int) {
 }
 
 func (s *ExtAuthzServer) fetchPolicies() {
-	log.Printf("Fetching policies")
+	log.Printf("Fetching policies from %s", s.config.PolicyURL)
 	cfg := clientcredentials.Config{
 		ClientID:     s.config.ClientId,
 		ClientSecret: s.config.ClientSecret,
@@ -166,7 +179,8 @@ func NewExtAuthzServer(config IpAuthConfig, block []netip.Prefix) *ExtAuthzServe
 	}
 }
 
-func readPolicyFile(policyFile string) []netip.Prefix {
+func (s *ExtAuthzServer) readPolicyFile(policyFile string) {
+	log.Printf("Reading policies from %s", policyFile)
 	policies := []map[string]string{}
 	policiesJson, err := os.ReadFile(policyFile)
 	if err != nil {
@@ -188,7 +202,8 @@ func readPolicyFile(policyFile string) []netip.Prefix {
 			block = append(block, p)
 		}
 	}
-	return block
+	s.block = block
+	log.Printf("Number of blocked network ranges: %v", len(s.block))
 }
 
 func readConfigFile(configFile string, config *IpAuthConfig) {
@@ -206,19 +221,14 @@ func readConfigFile(configFile string, config *IpAuthConfig) {
 func main() {
 	flag.Parse()
 
-	var config IpAuthConfig
+	config := IpAuthConfig{UsePolicyFile: true, UsePolicyUrl: false, PolicyUpdateInterval: 600}
 	var block []netip.Prefix
 
-	if *policyFile != "" {
-		block = readPolicyFile(*policyFile)
-		log.Printf("%v policies loaded from %v\n", len(block), *policyFile)
-	}
 	if *configFile != "" {
 		readConfigFile(*configFile, &config)
 	}
 
 	s := NewExtAuthzServer(config, block)
-	s.fetchPolicies()
 
 	go s.refreshPolicies(config.PolicyUpdateInterval)
 
