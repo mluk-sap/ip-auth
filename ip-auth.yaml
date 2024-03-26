@@ -29,7 +29,7 @@ spec:
         app: ip-auth
     spec:
       containers:
-      - image: ghcr.io/kyma-project/ip-auth:0.0.3
+      - image: ghcr.io/kyma-project/ip-auth:0.0.4
         args:
         - --policy=/projected-volume/policy.json 
         - --config=/projected-volume/config.yaml       
