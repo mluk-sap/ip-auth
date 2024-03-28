@@ -46,6 +46,11 @@ You can edit the `istio` CR by running the following command:
 kubectl edit istio -n kyma-system default
 ```
 
+If you run your cluster on Google Cloud Platform or Microsoft Azure, you need to enable externalTrafficPolicy: Local in the istio-ingressgateway service. You can do this by running the following command:
+```bash
+kubectl patch svc istio-ingressgateway -n istio-system -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+```
+
 Now create `ip-auth` namespace where the service with the configuration will be deployed.
   
 ```bash 
