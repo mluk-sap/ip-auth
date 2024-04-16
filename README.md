@@ -73,7 +73,6 @@ To create a config secret run the following command:
 kubectl -n ip-auth create secret generic config --from-file=config.yaml=sample-config.yaml
 ```
 
-
 If you want to use a static list of blocked IP ranges, you can create the config file with the list of blocked IP ranges and create the config map from it. The content of the `policy.json` file should look like this:
 
 ```json
@@ -105,9 +104,44 @@ kubectl apply -f https://raw.githubusercontent.com/kyma-project/ip-auth/main/ip-
 
 It also creates AuthorizationPolicy that enables custom authorizer for all requests coming to istio ingress gateway.
 
+## Testing with your own IP
 
-## Usage
+Deploy sample workload to test the service. You can use the following command:
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kyma-project/ip-auth/main/workload.yaml
+```
+The sample workload URL can be fetched from this command:
+```bash
+export WORKLOAD_URL=$(kubectl get virtualservice -l apirule.gateway.kyma-project.io/v1beta1=httpbin.workload -n workload -ojsonpath='{.items[0].spec.hosts[0]}')
+```
+Now you can test the service:
+```bash
+curl -i "https://$WORKLOAD_URL/headers"
+```
+You should get a 200 OK response with the headers like this::
+```
+{
+  "headers": {
+    "Accept": "*/*", 
+    "Host": "httpbin.xxxxx.kyma.ondemand.com", 
+    "User-Agent": "curl/8.4.0", 
+    "X-Envoy-Attempt-Count": "1", 
+    "X-Envoy-External-Address": "121.122.123.124", 
+    "X-Forwarded-Host": "httpbin.xxxx.kyma.ondemand.com"
+  }
+}
+```
+Now take the IP address from the `X-Envoy-External-Address` header and add it to the `policy.json` file. And recreate the config map with the new policy:
+```bash
+kubectl -n ip-auth create configmap policy --from-file=policy.json --dry-run=client -o yaml | kubectl apply -f -
+```
+Now restart the ip-auth service:
+```bash
+kubectl rollout restart deployment -n ip-auth ip-auth
+```
+Now when you run the curl command again, you should get a 403 Forbidden response.
 
+## Local development and testing
 
 You can start ip-auth locally by running the following command:
 ```bash
@@ -122,10 +156,6 @@ curl -v -H "x-envoy-external-address: 1.2.3.0"
 
 If the IP address is in the list of blocked IP ranges, the service will return a 403 Forbidden response. If the IP address is not in the list, the service will return a 200 OK response.
 
-
-## Development
-
-TO BE ADDED
 
 ## Links
 
