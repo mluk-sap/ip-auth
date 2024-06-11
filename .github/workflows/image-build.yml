@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - '*.*.*'
 
 jobs:
   build-image:
@@ -12,3 +14,6 @@ jobs:
       name: ip-auth
       dockerfile: Dockerfile
       context: .
+      tags: |
+        ghcr.io/kyma-project/ip-auth:latest
+        ghcr.io/kyma-project/ip-auth:${{ github.ref_name }}
