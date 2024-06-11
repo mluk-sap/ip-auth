@@ -1,4 +1,4 @@
-name: push-build-image-builder.yml
+name: image builder
 # description: "Build image-builder image for image-builder application."
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-image:
-    uses: kyma-project/test-infra/.github/workflows/image-builder.yml
+    uses: kyma-project/test-infra/.github/workflows/image-builder.yml@main
     with:
       name: image-builder
       dockerfile: Dockerfile
