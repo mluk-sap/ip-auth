@@ -9,6 +9,6 @@ jobs:
   build-image:
     uses: kyma-project/test-infra/.github/workflows/image-builder.yml@main
     with:
-      name: image-builder
+      name: ip-auth
       dockerfile: Dockerfile
       context: .
