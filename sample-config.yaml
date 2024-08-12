@@ -1,7 +1,9 @@
 clientId: here-goes-your-client-id
 clientSecret: here-goes-your-client-secret
 tokenUrl: https://example.com/oauth2/token
-policyUrl: https://example.com/policy
 usePolicyFile: true
-usePolicyUrl: false
+usePolicyService: false
 policyUpdateInterval: 600
+policyHost: policy.example.com
+policyProjectId: some-project-id
+policyId: some-policy-id

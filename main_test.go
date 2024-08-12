@@ -36,6 +36,11 @@ func TestExtAuthz(t *testing.T) {
 			ip:   "2.57.3.5",
 			want: http.StatusForbidden,
 		},
+		{
+			name: "HTTP-null",
+			ip:   "",
+			want: http.StatusForbidden,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
