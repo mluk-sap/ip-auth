@@ -78,16 +78,66 @@ If you want to use a static list of blocked IP ranges, you can create the config
 ```json
 [
   {
-    "network": "1.2.3.0/24",
-    "policy": "BLOCK_ACCESS"
-  },
-  {
-    "network": "2.4.0.0/16",
-    "policy": "BLOCK_ACCESS"
-  },
-  {
-    "network": "5.6.7.128/25",
-    "policy": "BLOCK_ACCESS"
+    "id": "some-policy-list-id",
+    "projectID": "some-project-id",
+    "versionID": "some-version-id",
+    "policyVersion": "some-policy-version",
+    "entries": [
+      {
+        "target": "1.2.3.0/24",
+        "tags": [
+          {
+            "name": "R",
+            "values": [
+              "some-region"
+            ]
+          },
+          {
+            "name": "S",
+            "values": [
+              "some-sanctions-package"
+            ]
+          }
+        ],
+        "policy": "BLOCK"
+      },
+      {
+        "target": "2.4.0.0/16",
+        "tags": [
+          {
+            "name": "R",
+            "values": [
+              "some-region"
+            ]
+          },
+          {
+            "name": "S",
+            "values": [
+              "some-sanctions-package"
+            ]
+          }
+        ],
+        "policy": "BLOCK"
+      },
+      {
+        "target": "5.6.7.128/25",
+        "tags": [
+          {
+            "name": "R",
+            "values": [
+              "some-region"
+            ]
+          },
+          {
+            "name": "S",
+            "values": [
+              "some-sanctions-package"
+            ]
+          }
+        ],
+        "policy": "BLOCK"
+      }
+    ]
   }
 ]
 ```
@@ -151,7 +201,7 @@ go run main.go
 Without config file, the service will use policy.json file from current directory. You can test the service by sending a request with the `x-envoy-external-address` header set to the IP address you want to check. For example:
 
 ```bash
-curl -v -H "x-envoy-external-address: 1.2.3.0" 
+curl -v -H "x-envoy-external-address: 1.2.3.0" localhost:8000
 ```
 
 If the IP address is in the list of blocked IP ranges, the service will return a 403 Forbidden response. If the IP address is not in the list, the service will return a 200 OK response.
