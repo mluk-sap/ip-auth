@@ -4,6 +4,7 @@
     "projectID": "some-project-id",
     "versionID": "some-version-id",
     "policyVersion": "some-policy-version",
+    "type": "ALLOW",
     "entries": [
       {
         "target": "1.2.3.0/24",

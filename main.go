@@ -62,11 +62,11 @@ var (
 type ExtAuthzServer struct {
 	httpServer *http.Server
 	// For test only
-	httpPort chan int
-	config   IpAuthConfig
-	block    []netip.Prefix
-	allow    []netip.Prefix
-	etag     string
+	httpPort  chan int
+	config    IpAuthConfig
+	allowlist []netip.Prefix
+	blocklist []netip.Prefix
+	etag      string
 }
 
 func (s *ExtAuthzServer) isAllowed(extIp string) bool {
@@ -76,12 +76,12 @@ func (s *ExtAuthzServer) isAllowed(extIp string) bool {
 		return false
 	}
 	// allow list takes precedence over the block list
-	for _, p := range s.allow {
+	for _, p := range s.allowlist {
 		if p.Contains(ip) {
 			return true
 		}
 	}
-	for _, p := range s.block {
+	for _, p := range s.blocklist {
 		if p.Contains(ip) {
 			return false
 		}
@@ -92,19 +92,31 @@ func (s *ExtAuthzServer) isAllowed(extIp string) bool {
 
 func (s *ExtAuthzServer) refreshPolicies(interval int) {
 	if s.config.UsePolicyFile {
-		s.readPolicyFile(*policyFile)
+		err := s.readPolicyFile(*policyFile)
+		if err != nil {
+			log.Printf("Error during policy read: %v", err)
+		}
 	}
 	if s.config.UsePolicyUrl {
-		s.fetchPolicies()
+		err := s.fetchPolicies()
+		if err != nil {
+			log.Printf("Error during policy fetch: %v", err)
+		}
 	}
 	if interval > 0 {
 		log.Printf("Refreshing policies every %v seconds", interval)
 		for range time.Tick(time.Duration(interval) * time.Second) {
 			if s.config.UsePolicyFile {
-				s.readPolicyFile(*policyFile)
+				err := s.readPolicyFile(*policyFile)
+				if err != nil {
+					log.Printf("Error during policy read: %v", err)
+				}
 			}
 			if s.config.UsePolicyUrl {
-				s.fetchPolicies()
+				err := s.fetchPolicies()
+				if err != nil {
+					log.Printf("Error during policy fetch: %v", err)
+				}
 			}
 		}
 	} else {
@@ -113,7 +125,7 @@ func (s *ExtAuthzServer) refreshPolicies(interval int) {
 }
 
 func (s *ExtAuthzServer) applyPolicies(policies []Policy) {
-	var allow, block []netip.Prefix
+	var allowlist, blocklist []netip.Prefix
 	for _, policy := range policies {
 		log.Printf("Applying policy ID %v, version %v, project %v", policy.Id, policy.PolicyVersion, policy.ProjectID)
 		for _, policyEntry := range policy.Entries {
@@ -122,20 +134,20 @@ func (s *ExtAuthzServer) applyPolicies(policies []Policy) {
 				log.Printf("Failed to parse network: %v", err)
 			}
 			if policyEntry.Policy == "BLOCK" {
-				block = append(block, p)
+				blocklist = append(blocklist, p)
 			} else if policyEntry.Policy == "ALLOW" {
-				allow = append(allow, p)
+				allowlist = append(allowlist, p)
 			} else {
 				log.Printf("Unknown policy %v for target %v, ignoring", policyEntry.Policy, policyEntry.Target)
 			}
 		}
 	}
-	s.allow = allow
-	s.block = block
-	log.Printf("Number of network ranges: allowed: %v, blocked: %v", len(s.allow), len(s.block))
+	s.allowlist = allowlist
+	s.blocklist = blocklist
+	log.Printf("Number of network ranges: allowed: %v, blocked: %v", len(s.allowlist), len(s.blocklist))
 }
 
-func (s *ExtAuthzServer) fetchPolicies() {
+func (s *ExtAuthzServer) fetchPolicies() error {
 	log.Printf("Fetching policies from %s", s.config.PolicyURL)
 	cfg := clientcredentials.Config{
 		ClientID:     s.config.ClientId,
@@ -150,9 +162,10 @@ func (s *ExtAuthzServer) fetchPolicies() {
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		log.Printf("Failed to get policies: %v", err)
+		return fmt.Errorf("failed to get policies: %w", err)
 	} else if res.StatusCode == 304 {
 		log.Printf("Policy with etag %v is already applied", s.etag)
+		return nil
 	} else if res.StatusCode == 200 {
 		etag := res.Header.Get("etag")
 		log.Printf("Received policy list with etag: %v", etag)
@@ -160,18 +173,19 @@ func (s *ExtAuthzServer) fetchPolicies() {
 		resBody, err := io.ReadAll(res.Body)
 		defer res.Body.Close()
 		if err != nil {
-			log.Printf("Failed to read response body: %v", err)
+			return fmt.Errorf("failed to read response body: %w", err)
 		}
 		var policies []Policy
 		err = json.Unmarshal(resBody, &policies)
 		if err != nil {
-			log.Printf("Failed to parse policies: %v", err)
+			return fmt.Errorf("failed to parse policies: %w", err)
 		} else {
 			s.applyPolicies(policies)
 			s.etag = etag
+			return nil
 		}
 	} else {
-		log.Printf("Failed to get policies, status code: %v", res.StatusCode)
+		return fmt.Errorf("failed to get policies, status code: %v", res.StatusCode)
 	}
 }
 
@@ -183,7 +197,6 @@ func (s *ExtAuthzServer) ServeHTTP(response http.ResponseWriter, request *http.R
 	}
 	extIp := request.Header.Get("x-envoy-external-address")
 	l := fmt.Sprintf("%s %s%s, ip: %v\n", request.Method, request.Host, request.URL, extIp)
-	log.Printf("External IP: %s", extIp)
 	if s.isAllowed(extIp) {
 		log.Printf("[HTTP][allowed]: %s", l)
 		response.WriteHeader(http.StatusOK)
@@ -225,29 +238,31 @@ func (s *ExtAuthzServer) stop() {
 	log.Printf("HTTP server stopped: %v", s.httpServer.Close())
 }
 
-func NewExtAuthzServer(config IpAuthConfig, block []netip.Prefix) *ExtAuthzServer {
+func NewExtAuthzServer(config IpAuthConfig, allow []netip.Prefix, block []netip.Prefix) *ExtAuthzServer {
 	return &ExtAuthzServer{
-		httpPort: make(chan int, 1),
-		config:   config,
-		block:    block,
+		httpPort:  make(chan int, 1),
+		config:    config,
+		allowlist: allow,
+		blocklist: block,
 	}
 }
 
-func (s *ExtAuthzServer) readPolicyFile(policyFile string) {
+func (s *ExtAuthzServer) readPolicyFile(policyFile string) error {
 	log.Printf("Reading policies from %s", policyFile)
 
 	policiesJson, err := os.ReadFile(policyFile)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	var policies []Policy
 	err = json.Unmarshal(policiesJson, &policies)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	s.applyPolicies(policies)
+	return nil
 }
 
 func readConfigFile(configFile string, config *IpAuthConfig) {
@@ -266,13 +281,13 @@ func main() {
 	flag.Parse()
 
 	config := IpAuthConfig{UsePolicyFile: true, UsePolicyUrl: false, PolicyUpdateInterval: 600}
-	var block []netip.Prefix
+	var allow, block []netip.Prefix
 
 	if *configFile != "" {
 		readConfigFile(*configFile, &config)
 	}
 
-	s := NewExtAuthzServer(config, block)
+	s := NewExtAuthzServer(config, allow, block)
 
 	go s.refreshPolicies(config.PolicyUpdateInterval)
 

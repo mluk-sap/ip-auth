@@ -9,9 +9,11 @@ import (
 
 func TestExtAuthz(t *testing.T) {
 	var config IpAuthConfig
-	prefix, _ := netip.ParsePrefix("2.57.3.0/24")
-	block := []netip.Prefix{prefix}
-	server := NewExtAuthzServer(config, block)
+	blockedIP, _ := netip.ParsePrefix("2.57.3.0/24")
+	blocklist := []netip.Prefix{blockedIP}
+	allowedIP, _ := netip.ParsePrefix("2.57.3.1/32")
+	allowlist := []netip.Prefix{allowedIP}
+	server := NewExtAuthzServer(config, allowlist, blocklist)
 
 	go server.run("localhost:0")
 
@@ -27,14 +29,24 @@ func TestExtAuthz(t *testing.T) {
 		want int
 	}{
 		{
-			name: "HTTP-allow",
+			name: "HTTP-allow-unknown",
 			ip:   "10.10.0.0",
 			want: http.StatusOK,
 		},
 		{
-			name: "HTTP-deny",
+			name: "HTTP-deny-blocklisted",
 			ip:   "2.57.3.5",
 			want: http.StatusForbidden,
+		},
+		{
+			name: "HTTP-deny-empty",
+			ip:   "",
+			want: http.StatusForbidden,
+		},
+		{
+			name: "HTTP-allow-allowlisted",
+			ip:   "2.57.3.1",
+			want: http.StatusOK,
 		},
 	}
 	for _, tc := range cases {
